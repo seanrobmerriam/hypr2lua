@@ -17,8 +17,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-mod parser;
-mod lua_gen;
+use hypr2lua::{generate, parse};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -44,8 +43,8 @@ fn main() {
         }
     };
 
-    let ast = parser::parse(&input);
-    let lua_output = lua_gen::generate(&ast);
+    let ast = parse(&input);
+    let lua_output = generate(&ast);
 
     match fs::write(&output_path, &lua_output) {
         Ok(()) => println!("Converted {} -> {}", input_path.display(), output_path.display()),
