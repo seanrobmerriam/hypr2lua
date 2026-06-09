@@ -1,3 +1,17 @@
+//! # hypr2lua
+//!
+//! A command-line tool that converts Hyprland hyprlang `.conf` files to the
+//! Lua configuration format introduced in Hyprland v0.55+.
+//!
+//! ## Usage
+//!
+//! ```bash
+//! hypr2lua <input.conf> [output.lua]
+//! ```
+//!
+//! If no output path is specified, the output will be written to a `.lua` file
+//! with the same base name as the input.
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;

@@ -29,10 +29,15 @@ pub fn generate(nodes: &[Node]) -> String {
                 postamble_lines.push(format!("require({})", lua_string(lua_path)));
             }
             Node::Section { name, children } => {
-                let (section_val, extracted_keywords) = build_section_table(children, nodes);
-                set_entries.push((name.clone(), section_val));
-                for kw_call in extracted_keywords {
-                    postamble_lines.push(kw_call);
+                if name == "windowrule" || name == "windowrulev2" {
+                    let call = format_windowrule_block(name, children, nodes);
+                    postamble_lines.push(call);
+                } else {
+                    let (section_val, extracted_keywords) = build_section_table(children, nodes);
+                    set_entries.push((name.clone(), section_val));
+                    for kw_call in extracted_keywords {
+                        postamble_lines.push(kw_call);
+                    }
                 }
             }
             Node::Assignment { key, value } => {
@@ -237,6 +242,11 @@ fn format_bind(variant: &str, args: &[String]) -> String {
         "bindr" => "hl.bindr",
         "bindle" => "hl.bindle",
         "bindlr" => "hl.bindlr",
+        "bindd" => "hl.bindd",
+        "bindeld" => "hl.bindeld",
+        "bindld" => "hl.bindld",
+        "binddr" => "hl.binddr",
+        "bindmd" => "hl.bindmd",
         _ => "hl.bind",
     };
 
@@ -256,6 +266,8 @@ fn format_keyword(name: &str, args: &[String]) -> String {
         "animation" => "hl.animation",
         "layerrule" => "hl.layerrule",
         "plugin" => "hl.plugin",
+        "env" => "hl.env",
+        "unbind" => "hl.unbind",
         _ => return format!("-- unsupported keyword: {}", name),
     };
 
@@ -267,6 +279,64 @@ fn format_keyword(name: &str, args: &[String]) -> String {
         }
     }).collect();
     format!("{}({})", hl_fn, lua_args.join(", "))
+}
+
+fn format_windowrule_block(name: &str, children: &[Node], all_nodes: &[Node]) -> String {
+    let mut entries: Vec<(String, LuaValue)> = Vec::new();
+
+    for child in children {
+        match child {
+            Node::Assignment { key, value } => {
+                let resolved = resolve_vars(value, all_nodes);
+                if key.contains(':') {
+                    let parts: Vec<&str> = key.splitn(2, ':').collect();
+                    let group = parts[0].to_string();
+                    let inner_key = parts[1].to_string();
+                    if let Some(existing) = entries.iter_mut().find(|(k, _)| k == &group) {
+                        if let LuaValue::Table(ref mut inner) = existing.1 {
+                            inner.push((inner_key, lua_value(&resolved)));
+                        }
+                    } else {
+                        entries.push((
+                            group,
+                            LuaValue::Table(vec![(inner_key, lua_value(&resolved))]),
+                        ));
+                    }
+                } else if key.contains('.') {
+                    let parts: Vec<&str> = key.splitn(2, '.').collect();
+                    let section = parts[0].to_string();
+                    let inner_key = parts[1].to_string();
+                    if let Some(existing) = entries.iter_mut().find(|(k, _)| k == &section) {
+                        if let LuaValue::Table(ref mut inner) = existing.1 {
+                            inner.push((inner_key, lua_value(&resolved)));
+                        }
+                    } else {
+                        entries.push((
+                            section,
+                            LuaValue::Table(vec![(inner_key, lua_value(&resolved))]),
+                        ));
+                    }
+                } else {
+                    entries.push((key.clone(), lua_value(&resolved)));
+                }
+            }
+            Node::Comment(_) | Node::BlankLine => {}
+            _ => {}
+        }
+    }
+
+    let hl_fn = match name {
+        "windowrule" => "hl.windowrule",
+        "windowrulev2" => "hl.windowrulev2",
+        _ => "hl.windowrule",
+    };
+
+    let mut s = format!("{} {{\n", hl_fn);
+    for (k, v) in &entries {
+        write_table_entry(&mut s, k, v, 1);
+    }
+    s.push_str("}\n");
+    s
 }
 
 fn write_table_entry(out: &mut String, key: &str, val: &LuaValue, indent: usize) {

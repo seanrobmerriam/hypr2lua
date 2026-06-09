@@ -1,15 +1,89 @@
+//! Parser for Hyprland hyprlang `.conf` files.
+//!
+//! This module provides a line-oriented recursive descent parser that converts
+//! hyprlang configuration text into an abstract syntax tree (AST) of [`Node`] values.
+
+/// A node in the hyprlang AST.
+///
+/// Each variant represents a different syntactic element found in `.conf` files.
+///
+/// # Examples
+///
+/// ```
+/// use hypr2lua::parser::Node;
+///
+/// let node = Node::Variable {
+///     name: "mod".to_string(),
+///     value: "SUPER".to_string(),
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub enum Node {
+    /// A comment line (text after `#`).
     Comment(String),
+    /// An empty line.
     BlankLine,
-    Variable { name: String, value: String },
-    Assignment { key: String, value: String },
-    Section { name: String, children: Vec<Node> },
-    Bind { variant: String, args: Vec<String> },
-    Keyword { name: String, args: Vec<String> },
-    Source { path: String },
+    /// A variable assignment (`$name = value`).
+    Variable {
+        /// The variable name (without the leading `$`).
+        name: String,
+        /// The variable value.
+        value: String,
+    },
+    /// A key-value assignment (`key = value`).
+    Assignment {
+        /// The assignment key.
+        key: String,
+        /// The assignment value.
+        value: String,
+    },
+    /// A section block (`name { ... }`).
+    Section {
+        /// The section name.
+        name: String,
+        /// Child nodes within the section.
+        children: Vec<Node>,
+    },
+    /// A bind directive (`bind`, `bindl`, `bindd`, etc.).
+    Bind {
+        /// The bind variant (e.g., "bind", "bindl", "bindd").
+        variant: String,
+        /// The bind arguments.
+        args: Vec<String>,
+    },
+    /// A keyword directive (`exec-once`, `windowrule`, `monitor`, etc.).
+    Keyword {
+        /// The keyword name.
+        name: String,
+        /// The keyword arguments.
+        args: Vec<String>,
+    },
+    /// A source directive (`source = path`).
+    Source {
+        /// The path to source.
+        path: String,
+    },
 }
 
+/// Parses hyprlang configuration text into an AST.
+///
+/// # Arguments
+///
+/// * `input` - The hyprlang `.conf` file contents as a string.
+///
+/// # Returns
+///
+/// A vector of [`Node`] values representing the parsed configuration.
+///
+/// # Examples
+///
+/// ```
+/// use hypr2lua::parser::{parse, Node};
+///
+/// let input = "$mod = SUPER\nbind = $mod, Q, exec, terminal";
+/// let nodes = parse(input);
+/// assert_eq!(nodes.len(), 3); // variable, blank, bind
+/// ```
 pub fn parse(input: &str) -> Vec<Node> {
     let mut nodes = Vec::new();
     let lines: Vec<&str> = input.lines().collect();
@@ -120,7 +194,7 @@ fn parse_line(line: &str) -> Node {
         }
     }
 
-    let bind_variants = ["bindle", "bindlr", "bindr", "bindl", "bindm", "bind"];
+    let bind_variants = ["bindeld", "bindld", "binddr", "bindmd", "bindle", "bindlr", "bindd", "bindr", "bindl", "bindm", "bind"];
     for variant in &bind_variants {
         if trimmed.starts_with(variant) && trimmed[variant.len()..].trim_start().starts_with('=') {
             let args_str = trimmed.split_once('=').unwrap().1.trim();
@@ -133,8 +207,8 @@ fn parse_line(line: &str) -> Node {
     }
 
     let keywords = [
-        "exec-once", "exec", "windowrule", "windowrulev2", "workspace",
-        "monitor", "bezier", "animation", "layerrule", "plugin",
+        "exec-once", "exec", "windowrulev2", "windowrule", "workspace",
+        "monitor", "bezier", "animation", "layerrule", "plugin", "env", "unbind",
     ];
     for kw in &keywords {
         if trimmed.starts_with(kw) && trimmed[kw.len()..].trim_start().starts_with('=') {

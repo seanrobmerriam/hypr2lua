@@ -2,5 +2,11 @@
 name = "hypr2lua"
 version = "0.1.0"
 edition = "2024"
+description = "Converts Hyprland hyprlang .conf files to Lua format for Hyprland v0.55+"
+license = "MIT"
+repository = "https://github.com/sean/hypr2lua"
+keywords = ["hyprland", "config", "converter", "lua", "hyprlang"]
+categories = ["command-line-utilities", "config"]
+readme = "README.md"
 
 [dependencies]
