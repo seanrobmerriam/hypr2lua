@@ -40,6 +40,7 @@ pub fn generate(nodes: &[Node]) -> String {
     let mut set_entries: Vec<(String, LuaValue)> = Vec::new();
     let mut preamble_lines: Vec<String> = Vec::new();
     let mut postamble_lines: Vec<String> = Vec::new();
+    let mut source_entries: Vec<(String, bool)> = Vec::new();
 
     for node in nodes {
         match node {
@@ -57,8 +58,9 @@ pub fn generate(nodes: &[Node]) -> String {
             }
             Node::Source { path } => {
                 let resolved = resolve_vars(path, nodes);
-                let lua_path = resolved.trim_end_matches(".conf").trim_end_matches(".lua");
-                postamble_lines.push(format!("require({})", lua_string(lua_path)));
+                let lua_path = to_lua_path(&resolved);
+                let is_glob = lua_path.contains('*');
+                source_entries.push((lua_path, is_glob));
             }
             Node::Section { name, children } => {
                 if name == "windowrule" || name == "windowrulev2" {
@@ -109,6 +111,55 @@ pub fn generate(nodes: &[Node]) -> String {
     }
 
     let preamble = collapse_blank_lines(&preamble_lines);
+    
+    if !source_entries.is_empty() {
+        out.push_str("local home = os.getenv(\"HOME\")\n");
+        out.push_str("local function expand_home(p)\n");
+        out.push_str("  if p:sub(1, 2) == \"~/\" then\n");
+        out.push_str("    return home .. p:sub(2)\n");
+        out.push_str("  end\n");
+        out.push_str("  return p\n");
+        out.push_str("end\n\n");
+        
+        out.push_str("local function req(path)\n");
+        out.push_str("  local expanded = expand_home(path)\n");
+        out.push_str("  local dir = expanded:match(\"(.*/)\")\n");
+        out.push_str("  local name = expanded:match(\"([^/]+)$\"):gsub(\"%.lua$\", \"\")\n");
+        out.push_str("  local saved = package.path\n");
+        out.push_str("  package.path = dir .. \"?.lua;\" .. dir .. \"?/init.lua\"\n");
+        out.push_str("  package.loaded[name] = nil\n");
+        out.push_str("  local mod = require(name)\n");
+        out.push_str("  package.path = saved\n");
+        out.push_str("  return mod\n");
+        out.push_str("end\n\n");
+        
+        out.push_str("local function req_glob(pattern)\n");
+        out.push_str("  local expanded = expand_home(pattern)\n");
+        out.push_str("  local dir = expanded:match(\"(.*/)\")\n");
+        out.push_str("  local handle = io.popen(\"ls -1 \" .. expanded .. \" 2>/dev/null\")\n");
+        out.push_str("  if handle then\n");
+        out.push_str("    for file in handle:lines() do\n");
+        out.push_str("      local name = file:match(\"([^/]+)$\"):gsub(\"%.lua$\", \"\")\n");
+        out.push_str("      local saved = package.path\n");
+        out.push_str("      package.path = dir .. \"?.lua;\" .. dir .. \"?/init.lua\"\n");
+        out.push_str("      package.loaded[name] = nil\n");
+        out.push_str("      require(name)\n");
+        out.push_str("      package.path = saved\n");
+        out.push_str("    end\n");
+        out.push_str("    handle:close()\n");
+        out.push_str("  end\n");
+        out.push_str("end\n\n");
+        
+        for (path, is_glob) in &source_entries {
+            if *is_glob {
+                out.push_str(&format!("req_glob({})\n", lua_string(path)));
+            } else {
+                out.push_str(&format!("req({})\n", lua_string(path)));
+            }
+        }
+        out.push('\n');
+    }
+    
     out.push_str(&preamble);
 
     if !set_entries.is_empty() {
@@ -238,6 +289,13 @@ fn resolve_vars(value: &str, nodes: &[Node]) -> String {
         }
     }
     result
+}
+
+fn to_lua_path(path: &str) -> String {
+    let stripped = path
+        .trim_end_matches(".conf")
+        .trim_end_matches(".lua");
+    format!("{}.lua", stripped)
 }
 
 fn sanitize_var_name(name: &str) -> String {
